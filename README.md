@@ -2,7 +2,7 @@
 
 An Africa-first campaign intelligence workspace for Greenpeace Africa.
 
-This project turns the original threat-map template into a simpler monitoring system focused on:
+This project is a simpler monitoring system focused on:
 
 - campaign signal tracking across Africa
 - heatmapping where issues are intensifying
@@ -22,7 +22,7 @@ This project turns the original threat-map template into a simpler monitoring sy
 
 ## What The App Does Now
 
-### Phase 1
+### Signals Monitoring
 
 - **Africa-first map** centered on the continent by default
 - **Signals feed** for campaign-relevant developments
@@ -30,7 +30,7 @@ This project turns the original threat-map template into a simpler monitoring sy
 - **Campaign area filters** for the eight Greenpeace Africa focus areas
 - **Priority model** using `critical`, `high`, `medium`, `low`, and `watch`
 
-### Phase 2
+### Mentions Monitoring
 
 - **Mentions tab** for external references to Greenpeace Africa
 - **External mention detection** for:
@@ -171,13 +171,13 @@ You can add:
 
 This is not yet a full social-firehose listening platform.
 
-The current mentions pipeline is a strong first pass for:
+The current mentions pipeline is a strong starting point for:
 
 - web/news references
 - external pickup of Greenpeace Africa references
 - campaign-related monitoring across Africa
 
-The next logical steps would be:
+Future expansions could include:
 
 1. broader social source ingestion
 2. server-backed alert delivery

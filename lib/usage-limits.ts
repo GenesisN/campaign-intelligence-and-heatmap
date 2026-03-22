@@ -1,4 +1,4 @@
-const STORAGE_KEY = "globalthreatmap_usage";
+const STORAGE_KEY = "campaignheatmap_usage";
 
 interface UsageData {
   eventLoads: number;

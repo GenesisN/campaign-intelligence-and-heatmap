@@ -1,7 +1,7 @@
 {
-  "name": "globalthreatmap",
+  "name": "campaignheatmap",
   "version": "1.0.0",
-  "description": "Global Threat & Event Intelligence Map - Real-time situational awareness platform",
+  "description": "Africa-first campaign monitoring workspace for Greenpeace Africa",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,9 +9,9 @@
     "lint": "next lint"
   },
   "keywords": [
-    "threat-intelligence",
-    "osint",
-    "geopolitical",
+    "campaign-monitoring",
+    "environmental-intelligence",
+    "greenpeace-africa",
     "mapbox",
     "valyu"
   ],

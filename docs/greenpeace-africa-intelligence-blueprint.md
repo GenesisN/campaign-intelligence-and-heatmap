@@ -328,23 +328,23 @@ Examples:
 
 ## Minimal Viable Version
 
-If you want the fastest path, build this in three phases.
+If you want the fastest path, build this in three milestones.
 
-### Phase 1: Campaign signal monitor
+### Milestone 1: Campaign signal monitor
 
 - replace taxonomy and queries
 - Africa-only map
 - single feed of developments
 - heatmap by campaign topic and priority
 
-### Phase 2: Mentions and social sensing
+### Milestone 2: Mentions and social sensing
 
 - mention target registry
 - web mention detection
 - conversation-source ingestion
 - "spike" detection for notable amplification
 
-### Phase 3: Workflow intelligence
+### Milestone 3: Workflow intelligence
 
 - saved watchlists
 - alerts by topic/country

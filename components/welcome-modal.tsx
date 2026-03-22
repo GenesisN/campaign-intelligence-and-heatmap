@@ -84,7 +84,7 @@ export function WelcomeModal({ open, onOpenChange }: WelcomeModalProps) {
 
       <DialogContent className="max-h-[60vh]">
         <p className="mb-6 text-muted-foreground">
-          Your Phase 1 campaign monitoring workspace for tracking Africa-focused
+          Your campaign monitoring workspace for tracking Africa-focused
           environmental developments and campaign signals.
         </p>
 

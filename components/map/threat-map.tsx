@@ -1,0 +1,458 @@
+"use client";
+
+import { useCallback, useMemo, useRef, useState } from "react";
+import Map, {
+  NavigationControl,
+  GeolocateControl,
+  ScaleControl,
+  Source,
+  Layer,
+  Popup,
+  type MapRef,
+  type MapMouseEvent,
+  type LayerProps,
+} from "react-map-gl/mapbox";
+import { useMapStore } from "@/stores/map-store";
+import { useEventsStore } from "@/stores/events-store";
+import { threatLevelColors } from "@/types";
+import { EventPopup } from "./event-popup";
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+
+const clusterLayer: LayerProps = {
+  id: "clusters",
+  type: "circle",
+  filter: ["has", "point_count"],
+  paint: {
+    "circle-color": [
+      "step",
+      ["get", "point_count"],
+      "#38bdf8",
+      10,
+      "#eab308",
+      30,
+      "#f97316",
+      100,
+      "#ef4444",
+    ],
+    "circle-radius": ["step", ["get", "point_count"], 12, 10, 16, 30, 20, 100, 24],
+    "circle-stroke-width": 2,
+    "circle-stroke-color": "#0f172a",
+    "circle-opacity": 0.9,
+  },
+};
+
+const clusterCountLayer: LayerProps = {
+  id: "cluster-count",
+  type: "symbol",
+  filter: ["has", "point_count"],
+  layout: {
+    "text-field": ["get", "point_count_abbreviated"],
+    "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
+    "text-size": 11,
+  },
+  paint: {
+    "text-color": "#ffffff",
+  },
+};
+
+const unclusteredPointLayer: LayerProps = {
+  id: "unclustered-point",
+  type: "circle",
+  filter: ["!", ["has", "point_count"]],
+  paint: {
+    "circle-color": [
+      "match",
+      ["get", "threatLevel"],
+      "critical",
+      threatLevelColors.critical,
+      "high",
+      threatLevelColors.high,
+      "medium",
+      threatLevelColors.medium,
+      "low",
+      threatLevelColors.low,
+      "watch",
+      threatLevelColors.watch,
+      threatLevelColors.watch,
+    ],
+    "circle-radius": [
+      "match",
+      ["get", "threatLevel"],
+      "critical",
+      10,
+      "high",
+      9,
+      "medium",
+      8,
+      "low",
+      7,
+      6,
+    ],
+    "circle-stroke-width": 2,
+    "circle-stroke-color": "#0f172a",
+  },
+};
+
+const heatmapLayer: LayerProps = {
+  id: "events-heat",
+  type: "heatmap",
+  maxzoom: 9,
+  paint: {
+    "heatmap-weight": [
+      "interpolate",
+      ["linear"],
+      ["get", "severity"],
+      0,
+      0,
+      5,
+      1,
+    ],
+    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 1, 9, 3],
+    "heatmap-color": [
+      "interpolate",
+      ["linear"],
+      ["heatmap-density"],
+      0,
+      "rgba(0, 0, 0, 0)",
+      0.2,
+      "rgba(56, 189, 248, 0.35)",
+      0.4,
+      "rgba(250, 204, 21, 0.45)",
+      0.6,
+      "rgba(249, 115, 22, 0.65)",
+      0.8,
+      "rgba(239, 68, 68, 0.8)",
+      1,
+      "rgba(185, 28, 28, 0.9)",
+    ],
+    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 8, 9, 28],
+    "heatmap-opacity": 0.85,
+  },
+};
+
+const entityLocationLayer: LayerProps = {
+  id: "entity-locations",
+  type: "circle",
+  paint: {
+    "circle-color": "#22c55e",
+    "circle-radius": 10,
+    "circle-stroke-width": 3,
+    "circle-stroke-color": "#ffffff",
+  },
+};
+
+const entityLocationLabelLayer: LayerProps = {
+  id: "entity-location-labels",
+  type: "symbol",
+  layout: {
+    "text-field": ["get", "placeName"],
+    "text-font": ["DIN Pro Medium", "Arial Unicode MS Bold"],
+    "text-size": 12,
+    "text-offset": [0, 1.5],
+    "text-anchor": "top",
+  },
+  paint: {
+    "text-color": "#22c55e",
+    "text-halo-color": "#0f172a",
+    "text-halo-width": 1,
+  },
+};
+
+function getSeverityValue(threatLevel: string): number {
+  const values: Record<string, number> = {
+    critical: 5,
+    high: 4,
+    medium: 3,
+    low: 2,
+    watch: 1,
+  };
+
+  return values[threatLevel] || 1;
+}
+
+interface SelectedEntityLocation {
+  longitude: number;
+  latitude: number;
+  placeName: string;
+  entityName: string;
+  country?: string;
+}
+
+export function ThreatMap() {
+  const mapRef = useRef<MapRef>(null);
+  const {
+    viewport,
+    setViewport,
+    showHeatmap,
+    showClusters,
+    entityLocations,
+  } = useMapStore();
+  const { filteredEvents, selectedEvent, selectEvent } = useEventsStore();
+  const [selectedEntityLocation, setSelectedEntityLocation] =
+    useState<SelectedEntityLocation | null>(null);
+
+  const geojsonData = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: filteredEvents.map((event) => ({
+        type: "Feature" as const,
+        properties: {
+          id: event.id,
+          title: event.title,
+          category: event.category,
+          threatLevel: event.threatLevel,
+          signalType: event.signalType,
+          severity: getSeverityValue(event.threatLevel),
+          timestamp: event.timestamp,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [event.location.longitude, event.location.latitude],
+        },
+      })),
+    }),
+    [filteredEvents]
+  );
+
+  const entityLocationsData = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: entityLocations.map((location, index) => ({
+        type: "Feature" as const,
+        properties: {
+          id: `entity-loc-${index}`,
+          placeName: location.placeName || location.country || "Unknown",
+          entityName: location.entityName,
+          country: location.country,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [location.longitude, location.latitude],
+        },
+      })),
+    }),
+    [entityLocations]
+  );
+
+  const handleMapClick = useCallback(
+    (event: MapMouseEvent) => {
+      if (event.features?.length) {
+        const feature = event.features[0];
+        const layerId = feature.layer?.id;
+
+        if (layerId === "clusters" && mapRef.current) {
+          const clusterId = feature.properties?.cluster_id;
+          const source = mapRef.current.getSource("events") as mapboxgl.GeoJSONSource;
+
+          source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (err) return;
+
+            mapRef.current?.easeTo({
+              center: (feature.geometry as GeoJSON.Point).coordinates as [
+                number,
+                number,
+              ],
+              zoom: zoom || viewport.zoom + 2,
+              duration: 500,
+            });
+          });
+          return;
+        }
+
+        if (layerId === "unclustered-point") {
+          const eventId = feature.properties?.id;
+          const clickedEvent = filteredEvents.find((item) => item.id === eventId);
+          if (clickedEvent) {
+            selectEvent(clickedEvent);
+            setSelectedEntityLocation(null);
+          }
+          return;
+        }
+
+        if (layerId === "entity-locations") {
+          const coords = (feature.geometry as GeoJSON.Point).coordinates;
+          setSelectedEntityLocation({
+            longitude: coords[0],
+            latitude: coords[1],
+            placeName: feature.properties?.placeName || "Unknown",
+            entityName: feature.properties?.entityName || "Unknown",
+            country: feature.properties?.country,
+          });
+          selectEvent(null);
+          return;
+        }
+      }
+
+      selectEvent(null);
+      setSelectedEntityLocation(null);
+    },
+    [filteredEvents, selectEvent, viewport.zoom]
+  );
+
+  const handleMouseEnter = useCallback(() => {
+    if (mapRef.current) {
+      mapRef.current.getCanvas().style.cursor = "pointer";
+    }
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (mapRef.current) {
+      mapRef.current.getCanvas().style.cursor = "";
+    }
+  }, []);
+
+  if (!MAPBOX_TOKEN) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-card">
+        <div className="text-center">
+          <p className="text-lg font-semibold text-foreground">
+            Mapbox Token Required
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Please add `NEXT_PUBLIC_MAPBOX_TOKEN` to your environment file.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Map
+      ref={mapRef}
+      {...viewport}
+      onMove={(evt) => setViewport(evt.viewState)}
+      mapStyle="mapbox://styles/mapbox/dark-v11"
+      mapboxAccessToken={MAPBOX_TOKEN}
+      interactiveLayerIds={
+        showClusters
+          ? ["clusters", "unclustered-point", "entity-locations"]
+          : ["unclustered-point", "entity-locations"]
+      }
+      onClick={handleMapClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      attributionControl={false}
+    >
+      <NavigationControl position="top-right" />
+      <GeolocateControl position="top-right" />
+      <ScaleControl position="bottom-right" />
+
+      <Source
+        id="events"
+        type="geojson"
+        data={geojsonData}
+        cluster={showClusters}
+        clusterMaxZoom={14}
+        clusterRadius={50}
+      >
+        {showHeatmap && <Layer {...heatmapLayer} />}
+        {showClusters && <Layer {...clusterLayer} />}
+        {showClusters && <Layer {...clusterCountLayer} />}
+        <Layer {...unclusteredPointLayer} />
+      </Source>
+
+      {entityLocations.length > 0 && (
+        <Source id="entity-locations" type="geojson" data={entityLocationsData}>
+          <Layer {...entityLocationLayer} />
+          <Layer {...entityLocationLabelLayer} />
+        </Source>
+      )}
+
+      {selectedEvent && (
+        <Popup
+          longitude={selectedEvent.location.longitude}
+          latitude={selectedEvent.location.latitude}
+          anchor="bottom"
+          onClose={() => selectEvent(null)}
+          closeButton={true}
+          closeOnClick={false}
+          className="threat-popup"
+        >
+          <EventPopup event={selectedEvent} />
+        </Popup>
+      )}
+
+      {selectedEntityLocation && (
+        <Popup
+          longitude={selectedEntityLocation.longitude}
+          latitude={selectedEntityLocation.latitude}
+          anchor="bottom"
+          onClose={() => setSelectedEntityLocation(null)}
+          closeButton={true}
+          closeOnClick={false}
+          className="threat-popup"
+        >
+          <div className="min-w-[200px] p-2">
+            <div className="mb-2 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/20">
+                <svg
+                  className="h-4 w-4 text-green-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  {selectedEntityLocation.entityName}
+                </h3>
+                <span className="text-xs text-green-400">Tracked entity</span>
+              </div>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex items-start gap-2 text-muted-foreground">
+                <svg
+                  className="mt-0.5 h-3 w-3 shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                <span>{selectedEntityLocation.placeName}</span>
+              </div>
+              {selectedEntityLocation.country &&
+                selectedEntityLocation.country !== selectedEntityLocation.placeName && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <svg
+                      className="h-3 w-3 shrink-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span>{selectedEntityLocation.country}</span>
+                  </div>
+                )}
+            </div>
+          </div>
+        </Popup>
+      )}
+    </Map>
+  );
+}
